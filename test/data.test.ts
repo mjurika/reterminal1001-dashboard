@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { relativeHumidity, ktToKmh, windDirSk, parseRawMetar } from '../src/fetch/metar.ts';
 import { parseForecast } from '../src/fetch/forecast.ts';
-import { buildData, readFixtureInputs } from '../src/build-data.ts';
+import { buildData, currentMetarSlot, readFixtureInputs } from '../src/build-data.ts';
 import { loadConfig, loadLayout, localParts } from '../src/common.ts';
 import { packBits, threshold } from '../src/to-1bit.ts';
 
@@ -55,6 +56,19 @@ test('showcase fixture builds complete data', () => {
   assert.equal(data.days[0].weekday, 'Po');
   assert.equal(data.metar?.windDir, 'JZ');
   assert.equal(data.metar?.gustKmh, 57);
+});
+
+test('METAR slot is the start of the current half hour', () => {
+  assert.equal(currentMetarSlot(new Date('2026-11-01T11:29:59Z')).toISOString(), '2026-11-01T11:00:00.000Z');
+  assert.equal(currentMetarSlot(new Date('2026-11-01T11:30:00Z')).toISOString(), '2026-11-01T11:30:00.000Z');
+});
+
+test('workflow Playwright container matches the installed Playwright', () => {
+  const version = JSON.parse(readFileSync('node_modules/playwright/package.json', 'utf8')).version;
+  for (const wf of ['render.yml', 'ci.yml']) {
+    const image = readFileSync(`.github/workflows/${wf}`, 'utf8').match(/mcr\.microsoft\.com\/playwright:v([\d.]+)-/)?.[1];
+    assert.equal(image, version, `${wf}: container image must be playwright v${version}`);
+  }
 });
 
 test('layout holes are byte aligned', () => {

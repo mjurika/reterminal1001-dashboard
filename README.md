@@ -6,7 +6,7 @@ An 800×480 black-and-white e-paper dashboard for the Seeed **reTerminal E1001**
 - **Clock (HH:mm), indoor temperature/humidity and battery level** are drawn by the device itself, with a **partial refresh** every minute.
 
 ```
-GitHub Actions (cron :05/:35)                                     reTerminal E1001
+GitHub Actions (cron :01/:31)                                     reTerminal E1001
   METAR LZIB ─┐                                                    ┌──────────────────────────────┐
   Open-Meteo ─┼─► data.json ─► HTML/CSS ─► Chromium ─► 1-bit ─►    │ every 30 min: dashboard.bin  │
               │   (Node/TS)    template    screenshot  .bin/.png   │   → full refresh             │
@@ -108,11 +108,16 @@ The models and coordinates are set in `config.json`. Open-Meteo is free for non-
 4. **Actions → render → Run workflow** (the push to `main` also triggers it).
 5. Open `https://<user>.github.io/reterminal-dashboard/`. This is the preview page with the live 1-bit image and the simulated clock. The device downloads `…/dashboard.bin` and `…/meta.json`.
 
-After that, `render.yml` runs at **:05 and :35** every hour. GitHub cron is best-effort, so runs may be 5–20 min late.
+After that, `render.yml` is scheduled at **:01 and :31** every hour. GitHub cron is best-effort, so runs often start 5–20 min late.
+
+How the METAR delay is kept short:
+- **Workflow:** `npm run fetch -- --wait-metar=10`. If the run starts before the METAR of the current half hour is on aviationweather.gov, it polls every 30 s for up to 10 minutes. It never publishes the old observation when a new one is due.
+- **Build:** the job runs in the official Playwright container (`mcr.microsoft.com/playwright:v1.64.1-noble`), which has Chromium preinstalled, so the whole run takes about 1–1.5 min. The tag must match the `playwright` version in `package.json`; `npm test` checks this. When upgrading Playwright, update the tag in `render.yml` and `ci.yml`.
+- **Device:** polls `meta.json` every 2 minutes from :04 to :24 (and :34 to :54) until its `metarTime` matches the current half hour (see §3).
 
 - `ci.yml` runs on pull requests and non-main branches. It typechecks, tests, renders the showcase fixture and attaches `dashboard.png` as an artifact.
 - `keepalive.yml` re-enables the scheduled workflows monthly. GitHub disables them after 60 days without repo activity.
-- If you want punctual runs, add an external trigger (e.g. cron-job.org) that calls `POST /repos/<user>/reterminal-dashboard/actions/workflows/render.yml/dispatches` with body `{"ref":"main"}`. Use a fine-grained token with *Actions: write*.
+- If you want punctual runs, add an external trigger (e.g. cron-job.org) that calls `POST /repos/mjurika/reterminal1001-dashboard/actions/workflows/render.yml/dispatches` with body `{"ref":"main"}`. Use a fine-grained token with *Actions: write*.
 
 ---
 
@@ -152,8 +157,9 @@ The logs go to `Serial1` (GPIO43/44), as in Seeed's examples. If `pio device mon
 ### What the device does
 - **Cold boot:** Wi-Fi → NTP → PCF8563 RTC, downloads `meta.json` + `dashboard.bin`, then does a full refresh.
 - **Every minute:** time from the RTC, reads the SHT4x, then a **partial refresh** of the clock + indoor area (`layout.json` holes).
-- **At HH:08 and HH:38:** checks `meta.json`. If the hash changed, it downloads the 48 kB bitmap (cached in LittleFS) and does a full refresh.
-- If the background is older than 35 min, it retries every 5 min. If it is older than 2 h, a `!` appears next to the battery.
+- **New METAR:** from HH:04 / HH:34 it checks `meta.json` (a few hundred bytes) every 2 minutes, until `metarTime` shows the current half hour's observation, at the latest until :24 / :54. When the hash changes, it downloads the 48 kB bitmap (cached in LittleFS) and does a full refresh. Then it stops checking until the next half hour. Expect the new METAR on screen about 1–2 minutes after GitHub publishes it.
+- Besides that it checks at least every 30 minutes. After a failed download it retries every 5 minutes. If the last successful check is older than 2 h, a `!` appears next to the battery.
+- The intervals are set in `firmware/include/config.h` (`METAR_POLL_*`, `FETCH_*`).
 - A full refresh is also forced after 60 partial refreshes, to clear ghosting.
 - **Battery:** read every 10 min. Above 4.15 V it shows `USB`, since there is no charge-detect pin.
 

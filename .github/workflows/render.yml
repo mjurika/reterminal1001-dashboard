@@ -3,7 +3,9 @@ name: render
 # Fetches METAR + forecast, renders the dashboard background and publishes it to GitHub Pages.
 on:
   schedule:
-    - cron: '5,35 * * * *' # LZIB METAR is issued at :00 and :30 (GitHub may start runs a few minutes late)
+    # LZIB METAR is observed at :00 and :30. GitHub usually starts scheduled runs late; if a run starts
+    # before the new METAR is published, "fetch --wait-metar" waits for it (up to 10 min).
+    - cron: '1,31 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -21,7 +23,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    # Chromium + system libraries preinstalled; the tag must match the "playwright" version in package.json (checked by npm test).
+    container: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,13 +33,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npx playwright install --with-deps chromium
-      - run: npm run fetch
+      - run: npm run fetch -- --wait-metar=10
       - run: npm run render
       - run: npm run site
       - uses: actions/configure-pages@v5

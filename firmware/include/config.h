@@ -10,9 +10,14 @@
 #define NTP_SERVER2 "pool.ntp.org"
 
 // ---------- schedule ----------
-#define FETCH_MINUTE_A 8            // background download at HH:08 and HH:38
-#define FETCH_MINUTE_B 38           //   (GitHub job runs at :05/:35 and takes ~2 min)
-#define FETCH_RETRY_MINUTES 5       // retry interval while the background is older than 35 min
+// The background is re-rendered after each METAR (:00/:30). Until meta.json reports the METAR of the
+// current half hour, the device polls it (a few hundred bytes) every METAR_POLL_EVERY minutes
+// between HH:04 and HH:24 (and HH:34–HH:54); then it stops until the next half hour.
+#define METAR_POLL_START 4
+#define METAR_POLL_END 24
+#define METAR_POLL_EVERY 2
+#define FETCH_MAX_INTERVAL_MINUTES 30  // check at least this often (forecast-only updates, missing METAR)
+#define FETCH_RETRY_MINUTES 5          // retry interval after a failed download
 #define FULL_REFRESH_EVERY 60       // force a full refresh after this many partial refreshes (ghosting)
 #define BATTERY_UPDATE_MINUTES 10   // battery indicator refresh interval
 #define NIGHT_START_HOUR 23         // battery modes: no clock updates 23:00–06:00

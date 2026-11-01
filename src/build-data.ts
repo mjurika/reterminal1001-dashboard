@@ -2,6 +2,7 @@
  * Fetches METAR + forecast (or reads fixtures) and writes out/data.json for the template.
  *
  *   npm run fetch                      live data
+ *   npm run fetch -- --wait-metar=10   live data, first wait up to 10 min for the METAR of the current half hour
  *   npm run fetch:fixtures             fixtures/showcase
  *   tsx src/build-data.ts --fixtures=live
  */
@@ -26,15 +27,40 @@ export interface RawInputs {
   forecast: string;
 }
 
-export async function fetchInputs(): Promise<RawInputs> {
-  const cfg = loadConfig();
-  const [metar, forecast] = await Promise.all([
-    fetchMetarRaw(cfg.station).catch((err) => {
+/** Start of the current half hour (UTC), i.e. the observation time of the newest regular METAR. */
+export const currentMetarSlot = (now: Date) => new Date(Math.floor(now.getTime() / 1_800_000) * 1_800_000);
+
+/**
+ * Fetches the METAR; with waitMinutes > 0 polls until the report for the current half hour is available,
+ * so a run started at :01 doesn't publish the previous observation.
+ */
+async function fetchMetarWaiting(station: string, waitMinutes: number) {
+  const deadline = Date.now() + waitMinutes * 60_000;
+  for (;;) {
+    const metar = await fetchMetarRaw(station).catch((err) => {
       console.error(`METAR unavailable: ${err.message}`);
       return null;
-    }),
-    fetchForecastRaw(cfg),
-  ]);
+    });
+    const slot = currentMetarSlot(new Date());
+    let obs: Date | null = null;
+    try {
+      if (metar) obs = new Date(parseMetarResponse(metar.source, metar.body).obsTime);
+    } catch (err) {
+      console.error((err as Error).message);
+    }
+    if ((obs && obs >= slot) || Date.now() + 30_000 > deadline) {
+      if (waitMinutes > 0) console.log(`METAR ${obs?.toISOString() ?? 'n/a'} (slot ${slot.toISOString()})`);
+      return metar;
+    }
+    console.log(`Waiting for METAR ${slot.toISOString()} (latest ${obs?.toISOString() ?? 'n/a'})…`);
+    await new Promise((r) => setTimeout(r, 30_000));
+  }
+}
+
+export async function fetchInputs(waitMetarMinutes = 0): Promise<RawInputs> {
+  const cfg = loadConfig();
+  const metar = await fetchMetarWaiting(cfg.station, waitMetarMinutes);
+  const forecast = await fetchForecastRaw(cfg);
   return { now: new Date(), metar, forecast };
 }
 
@@ -87,7 +113,8 @@ export type DashboardData = ReturnType<typeof buildData>;
 
 async function main() {
   const arg = process.argv.find((a) => a.startsWith('--fixtures'));
-  const inputs = arg ? readFixtureInputs(arg.split('=')[1] ?? 'showcase') : await fetchInputs();
+  const wait = Number(process.argv.find((a) => a.startsWith('--wait-metar='))?.split('=')[1] ?? 0);
+  const inputs = arg ? readFixtureInputs(arg.split('=')[1] ?? 'showcase') : await fetchInputs(wait);
   const data = buildData(inputs);
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, 'data.json'), JSON.stringify(data, null, 2));

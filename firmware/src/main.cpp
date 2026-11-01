@@ -40,15 +40,17 @@ GxEPD2_BW<GxEPD2_750_GDEY075T7, GxEPD2_750_GDEY075T7::HEIGHT> display(
 
 static constexpr size_t BG_BYTES = SCREEN_W * SCREEN_H / 8;
 static constexpr const char *BG_FILE = "/bg.bin";
-static constexpr uint32_t STATE_MAGIC = 0xD45B0A01;
+static constexpr uint32_t STATE_MAGIC = 0xD45B0A02;  // change when State changes
 static constexpr int BATTERY_USB = 101;
 
 // Survives deep sleep (and is a plain global in the other modes).
 struct State {
   uint32_t magic;
   char hash[17];        // meta.json hash of the background on screen
+  char metarTime[6];    // "HH:MM" local observation time of the METAR in that background
   time_t lastFetchOk;   // last successful meta.json check
   time_t lastFetchTry;
+  bool lastFetchFailed;
   time_t lastNtp;
   uint16_t partials;    // partial refreshes since the last full refresh
   int16_t battery;      // percent shown, BATTERY_USB, or -1 = unknown
@@ -157,13 +159,15 @@ static bool httpGetExact(const String &url, uint8_t *buf, size_t len) {
   return got == len;
 }
 
-/** Minimal "key":"value" extraction, enough for meta.json. */
+/** Minimal "key":"value" extraction, enough for meta.json. Returns "" for missing keys and non-strings (null). */
 static String jsonString(const String &json, const char *key) {
   const int k = json.indexOf(String('"') + key + '"');
   if (k < 0) return "";
-  const int a = json.indexOf('"', json.indexOf(':', k) + 1);
+  int a = json.indexOf(':', k) + 1;
+  while (a > 0 && a < (int)json.length() && isspace((unsigned char)json[a])) a++;
+  if (a <= 0 || a >= (int)json.length() || json[a] != '"') return "";
   const int b = json.indexOf('"', a + 1);
-  return (a < 0 || b < 0) ? "" : json.substring(a + 1, b);
+  return b < 0 ? "" : json.substring(a + 1, b);
 }
 
 static FetchResult fetchBackground() {
@@ -179,6 +183,7 @@ static FetchResult fetchBackground() {
   String meta;
   if (httpGetString(String(DASHBOARD_BASE_URL) + "/meta.json" + bust, meta)) {
     const String hash = jsonString(meta, "hash");
+    const String metarTime = jsonString(meta, "metarTime");
     if (bgValid && hash.length() && hash == st.hash) {
       result = FETCH_UNCHANGED;
     } else {
@@ -187,6 +192,7 @@ static FetchResult fetchBackground() {
         memcpy(bg, tmp, BG_BYTES);
         bgValid = true;
         strlcpy(st.hash, hash.c_str(), sizeof(st.hash));
+        strlcpy(st.metarTime, metarTime.c_str(), sizeof(st.metarTime));
         File f = LittleFS.open(BG_FILE, "w");
         if (f) {
           f.write(bg, BG_BYTES);
@@ -197,8 +203,10 @@ static FetchResult fetchBackground() {
       free(tmp);
     }
   }
+  st.lastFetchFailed = result == FETCH_FAIL;
   if (result != FETCH_FAIL) st.lastFetchOk = time(nullptr);
-  Log.printf("fetch: %s (hash %s)\n", result == FETCH_NEW ? "new" : result == FETCH_UNCHANGED ? "unchanged" : "FAILED", st.hash);
+  Log.printf("fetch: %s (hash %s, METAR %s)\n",
+             result == FETCH_NEW ? "new" : result == FETCH_UNCHANGED ? "unchanged" : "FAILED", st.hash, st.metarTime);
   wifiOff();
   return result;
 }
@@ -358,6 +366,25 @@ static void fullRefresh(const struct tm *lt, bool blankClock, const Indoor &in) 
 
 // ---------------------------------------------------------------- main logic
 
+/** True if the background shows the METAR of the current half hour (or a newer special report). */
+static bool metarCurrent(const struct tm &lt) {
+  int h, m;
+  if (sscanf(st.metarTime, "%d:%d", &h, &m) != 2) return false;
+  const int age = (lt.tm_hour * 60 + lt.tm_min - (h * 60 + m) + 1440) % 1440;  // minutes, wraps at midnight
+  return age <= lt.tm_min % 30;
+}
+
+/** Whether to check meta.json in this minute. */
+static bool fetchDue(const struct tm &lt, time_t now) {
+  if (!bgValid) return true;
+  if (st.lastFetchFailed) return now - st.lastFetchTry >= FETCH_RETRY_MINUTES * 60;
+  const int m30 = lt.tm_min % 30;
+  const bool pollMinute =
+      m30 >= METAR_POLL_START && m30 <= METAR_POLL_END && (m30 - METAR_POLL_START) % METAR_POLL_EVERY == 0;
+  if (pollMinute && !metarCurrent(lt)) return true;  // new METAR expected on Pages any minute
+  return now - st.lastFetchTry >= FETCH_MAX_INTERVAL_MINUTES * 60;
+}
+
 static bool isNight(const struct tm &lt) {
   return POWER_MODE != POWER_USB && (lt.tm_hour >= NIGHT_START_HOUR || lt.tm_hour < NIGHT_END_HOUR);
 }
@@ -386,10 +413,7 @@ static void tick(bool cold) {
   st.nightShown = night;  // cold boot at night: one full refresh with "--:--", then sleep until morning
 
   const Indoor in = readIndoor();
-  const bool retryDue = now - st.lastFetchOk > 35 * 60 && now - st.lastFetchTry >= FETCH_RETRY_MINUTES * 60;
-  if (!cold && (lt.tm_min == FETCH_MINUTE_A || lt.tm_min == FETCH_MINUTE_B || retryDue || !bgValid)) {
-    fetched = fetchBackground();
-  }
+  if (!cold && fetchDue(lt, now)) fetched = fetchBackground();
 
   const bool full = cold || fetched == FETCH_NEW || st.partials >= FULL_REFRESH_EVERY;
   const bool stale = now - st.lastFetchOk > 2 * 3600;
