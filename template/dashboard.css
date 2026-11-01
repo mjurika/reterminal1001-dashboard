@@ -36,9 +36,10 @@ body.bw #screen { filter: url(#threshold); }
   padding: 8px 0 0 14px;
 }
 #metar .metar-head { font-size: 22px; font-weight: 600; width: 132px; white-space: nowrap; } /* keeps clear of the battery hole */
-#metar .metar-main { display: flex; align-items: baseline; gap: 16px; margin: 0 0 2px; }
-#metar .metar-temp { font-size: 80px; font-weight: 700; line-height: 1; white-space: nowrap; }
-#metar .metar-rh { font-size: 44px; font-weight: 700; line-height: 1; white-space: nowrap; }
+#metar .metar-main { display: flex; align-items: baseline; gap: 14px; margin: 0 0 2px; font-size: 80px; } /* font-size shrunk by fitMetar() if needed */
+#metar .metar-temp { font-size: 1em; font-weight: 700; line-height: 1; white-space: nowrap; }
+#metar .metar-rh { font-size: 1em; font-weight: 700; line-height: 1; white-space: nowrap; }
+#metar .metar-rh small { font-size: 0.5em; margin-left: 2px; }
 #metar .metar-row { font-size: 28px; font-weight: 600; line-height: 1.05; white-space: nowrap; }
 #metar .metar-row b { font-weight: 700; }
 #metar .gust { font-size: 24px; font-weight: 600; line-height: 1; }

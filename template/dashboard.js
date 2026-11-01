@@ -26,7 +26,7 @@ function renderTop(data) {
   $('#metar').classList.toggle('stale', m.stale);
   bind('metarTime', m.obsTimeLocal);
   bind('metarTemp', deg(m.tempC));
-  bind('metarRh', `${m.rh} %`);
+  bind('metarRh', `${m.rh}<small>%</small>`);
   bind('metarWind', m.windKmh === 0 ? 'bezvetrie' : `${m.windDir} ${m.windKmh} km/h`);
   bind('metarGust', m.gustKmh ? `nárazy ${m.gustKmh} km/h` : '');
 }
@@ -84,6 +84,13 @@ function renderHoles(layout, mode) {
     .join('');
 }
 
+/** Shrinks temperature + humidity together until they fit the METAR column (e.g. "−12°" with "100 %"). */
+function fitMetar() {
+  const row = $('#metar .metar-main');
+  let size = parseFloat(getComputedStyle(row).fontSize);
+  while (row.scrollWidth > row.clientWidth && size > 48) row.style.fontSize = `${(size -= 2)}px`;
+}
+
 async function main() {
   const dataUrl = params.get('data') ?? '../data.json';
   const [data, layout] = await Promise.all([
@@ -101,6 +108,7 @@ async function main() {
   renderHoles(layout, params.get('holes'));
 
   await document.fonts.ready;
+  fitMetar();
   document.body.dataset.ready = '1'; // signal for src/render.ts
 }
 
