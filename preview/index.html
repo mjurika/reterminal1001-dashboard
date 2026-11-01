@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>reTerminal E1001 – dashboard preview</title>
+  <link rel="stylesheet" href="template/fonts.css">
+  <style>
+    body { font: 15px/1.45 system-ui, sans-serif; margin: 24px; background: #e8e6e1; color: #222; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .muted { color: #666; }
+    .controls { margin: 14px 0; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+    .bezel { display: inline-block; padding: 26px 26px 40px; background: #2b2b2b; border-radius: 18px; box-shadow: 0 6px 24px #0004; }
+    .stage { position: relative; width: 800px; height: 480px; background: #fff; overflow: hidden; }
+    .stage.bw { filter: url(#threshold); }
+    .stage > img, .stage > iframe { position: absolute; inset: 0; width: 800px; height: 480px; border: 0; image-rendering: pixelated; }
+    .hole { position: absolute; display: flex; align-items: center; color: #000; background: #fff;
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; }
+    .hole { overflow: hidden; }
+    .hole > span { line-height: 1; text-box: trim-both cap alphabetic; } /* center on the digit height (cap height → baseline), like the firmware does */
+    .hole.clock { justify-content: center; font-size: 144px; }
+    .hole.indoor { justify-content: center; gap: 40px; font-size: 56px; font-weight: 700; }
+    .hole.indoor small { font-size: 22px; font-weight: 600; }
+    .hole.battery { justify-content: flex-end; gap: 6px; font-size: 22px; padding-right: 4px; font-weight: 600; }
+    .batt { width: 30px; height: 15px; border: 2px solid #000; position: relative; }
+    .batt::after { content: ''; position: absolute; right: -6px; top: 3px; width: 3px; height: 5px; background: #000; }
+    .batt i { position: absolute; left: 1px; top: 1px; bottom: 1px; background: #000; }
+    .outline .hole { outline: 2px dashed #d00; outline-offset: -2px; }
+    pre { background: #fff; padding: 12px; overflow: auto; max-height: 360px; font-size: 12px; }
+    a { color: #0645ad; }
+  </style>
+</head>
+<body>
+  <h1>reTerminal E1001 – dashboard preview</h1>
+  <div class="muted" id="meta">loading…</div>
+
+  <div class="controls">
+    <label><input type="radio" name="src" value="png" checked> Rendered 1-bit PNG (what the device downloads)</label>
+    <label><input type="radio" name="src" value="live"> Live HTML template</label>
+    <label><input type="checkbox" id="sim" checked> Simulate device areas</label>
+    <label><input type="checkbox" id="outline"> Outline holes</label>
+    <label><input type="checkbox" id="bw" checked> 1-bit threshold</label>
+  </div>
+  <div class="controls">
+    <label>Indoor <input id="tIn" type="number" step="0.1" value="22.4" style="width:60px"> °C
+      <input id="rhIn" type="number" value="48" style="width:50px"> %</label>
+    <label>Battery <input id="bat" type="range" min="0" max="101" value="78"> <span id="batv"></span></label>
+    <label>Clock <input id="clock" type="time"> (empty = now)</label>
+  </div>
+
+  <div class="bezel"><div class="stage bw" id="stage"><img id="img" alt="dashboard"><div id="holes"></div></div></div>
+
+  <p>
+    Files: <a href="dashboard.png">dashboard.png</a> · <a href="dashboard.bin">dashboard.bin</a> (48 000 B, 1 bpp) ·
+    <a href="meta.json">meta.json</a> · <a href="data.json">data.json</a> · <a href="layout.json">layout.json</a> ·
+    <a href="template/dashboard.html?holes=demo">template</a>
+  </p>
+  <details><summary>data.json</summary><pre id="data"></pre></details>
+
+  <svg width="0" height="0" style="position:absolute">
+    <filter id="threshold" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+        <feFuncG type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+        <feFuncB type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+  </svg>
+
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const stage = $('stage');
+    const [layout, meta, data] = await Promise.all(
+      ['layout.json', 'meta.json', 'data.json'].map((f) => fetch(f, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null))),
+    );
+
+    $('meta').textContent = meta
+      ? `Generated ${new Date(meta.generatedAt).toLocaleString('sk-SK')} · METAR ${meta.metarTime ?? 'n/a'} · hash ${meta.hash}`
+      : 'meta.json missing – run "npm run build:fixtures" or "npm run build" first';
+    $('data').textContent = JSON.stringify(data, null, 2);
+    $('img').src = `dashboard.png?${meta?.hash ?? Date.now()}`;
+
+    // Same logic as the firmware: voltage-free here, just percent; >100 = on USB
+    function holeHtml(name) {
+      if (name === 'clock') {
+        const v = $('clock').value;
+        const d = new Date();
+        return `<span>${v || `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`}</span>`;
+      }
+      if (name === 'indoor') {
+        const t = Number($('tIn').value).toFixed(1).replace('.', ',');
+        return `<span>${t}°</span><span>${$('rhIn').value} %</span>`;
+      }
+      if (name === 'battery') {
+        const p = Number($('bat').value);
+        $('batv').textContent = p > 100 ? 'USB' : `${p} %`;
+        return p > 100 ? '<span>USB</span>' : `<span>${p} %</span><span class="batt"><i style="width:${Math.round((p / 100) * 24)}px"></i></span>`;
+      }
+      return '';
+    }
+
+    function draw() {
+      const sim = $('sim').checked;
+      $('holes').innerHTML = Object.entries(layout.holes)
+        .map(([name, r]) => `<div class="hole ${name}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px">${sim ? holeHtml(name) : ''}</div>`)
+        .join('');
+      stage.classList.toggle('outline', $('outline').checked);
+      stage.classList.toggle('bw', $('bw').checked);
+    }
+
+    document.querySelectorAll('input[name=src]').forEach((el) =>
+      el.addEventListener('change', () => {
+        const live = document.querySelector('input[name=src]:checked').value === 'live';
+        const old = stage.querySelector('img, iframe');
+        const next = document.createElement(live ? 'iframe' : 'img');
+        next.src = live ? 'template/dashboard.html' : `dashboard.png?${meta?.hash ?? Date.now()}`;
+        if (live) next.setAttribute('scrolling', 'no');
+        stage.replaceChild(next, old);
+      }),
+    );
+    document.querySelectorAll('.controls input').forEach((el) => el.addEventListener('input', draw));
+    draw();
+    setInterval(draw, 15_000);
+  </script>
+</body>
+</html>

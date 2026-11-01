@@ -1,0 +1,92 @@
+/* 800×480 1-bit layout. Use only pure black (#000) and white (#fff); thin or grey strokes disappear after thresholding. */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { width: 800px; height: 480px; background: #fff; overflow: hidden; }
+
+body {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  color: #000;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.bw #screen { filter: url(#threshold); }
+
+#screen { position: relative; width: 800px; height: 480px; }
+
+/* ---------- grid lines ---------- */
+#screen::before, #screen::after { content: ''; position: absolute; background: #000; }
+#screen::before { left: 0; right: 0; top: 172px; height: 3px; }             /* below top band */
+#screen::after  { left: 0; right: 0; top: 365px; height: 3px; }             /* below hourly row */
+
+/* ---------- date ---------- */
+#date {
+  position: absolute; left: 376px; top: 0; width: 176px; height: 172px;
+  border-left: 3px solid #000;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+#date .weekday { font-size: 36px; font-weight: 600; line-height: 1; }
+#date .ddmm { font-size: 80px; font-weight: 700; line-height: 1; margin-top: 6px; }
+
+/* ---------- METAR ---------- */
+#metar {
+  position: absolute; left: 552px; top: 0; width: 248px; height: 172px;
+  border-left: 3px solid #000;
+  padding: 8px 0 0 14px;
+}
+#metar .metar-head { font-size: 22px; font-weight: 600; width: 132px; white-space: nowrap; } /* keeps clear of the battery hole */
+#metar .metar-main { display: flex; align-items: baseline; gap: 16px; margin: 0 0 2px; }
+#metar .metar-temp { font-size: 80px; font-weight: 700; line-height: 1; white-space: nowrap; }
+#metar .metar-rh { font-size: 44px; font-weight: 700; line-height: 1; white-space: nowrap; }
+#metar .metar-row { font-size: 28px; font-weight: 600; line-height: 1.05; white-space: nowrap; }
+#metar .metar-row b { font-weight: 700; }
+#metar .gust { font-size: 24px; font-weight: 600; line-height: 1; }
+#metar.stale .metar-temp, #metar.stale .metar-rh, #metar.stale .metar-row b { text-decoration: line-through; text-decoration-thickness: 3px; }
+
+/* ---------- next 8 hours ---------- */
+#hours {
+  position: absolute; left: 0; top: 175px; width: 800px; height: 190px;
+  display: grid; grid-template-columns: repeat(8, 1fr);
+}
+.hour {
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: 6px 0 7px;
+}
+.hour + .hour { border-left: 2px solid #000; }
+.hour .t { font-size: 27px; font-weight: 600; line-height: 1; }
+.hour .wx { margin: -2px 0; }
+.hour .temp { font-size: 44px; font-weight: 700; line-height: 1; }
+.hour .prob, .hour .amt { font-size: 25px; font-weight: 600; line-height: 1; display: flex; align-items: center; gap: 3px; }
+.hour .amt.zero { visibility: hidden; }
+
+/* ---------- next 3 days ---------- */
+#days {
+  position: absolute; left: 0; top: 368px; width: 800px; height: 92px;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+}
+.day { display: flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
+.day + .day { border-left: 2px solid #000; }
+.day .name { font-size: 24px; font-weight: 600; }
+.day .name b { font-weight: 700; }
+.day .minmax { font-size: 42px; font-weight: 700; margin: 0 0 1px; white-space: nowrap; }
+.day .minmax .min { font-weight: 600; }
+.day .rain { font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+
+/* ---------- footer ---------- */
+#footer {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 20px;
+  background: #000; color: #fff;
+  font-size: 15px; font-weight: 500; line-height: 20px; padding: 0 8px;
+  display: flex; justify-content: space-between;
+}
+
+/* ---------- device holes ---------- */
+.hole { position: absolute; background: #fff; }
+body.holes-outline .hole { outline: 2px dashed #000; outline-offset: -2px; }
+.hole.demo { display: flex; align-items: center; justify-content: center; }
+.hole.demo { overflow: hidden; }
+.hole.demo > span { line-height: 1; text-box: trim-both cap alphabetic; } /* center on the digit height (cap height → baseline), like the firmware does */
+.hole.demo.clock { font-size: 144px; font-weight: 700; }
+.hole.demo.indoor { font-size: 56px; font-weight: 700; gap: 40px; }
+.hole.demo.battery { font-size: 22px; justify-content: flex-end; gap: 6px; padding-right: 4px; }

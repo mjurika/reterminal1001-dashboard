@@ -1,0 +1,5 @@
+{
+  "capturedAt": "2026-11-01T11:22:43.829Z",
+  "source": "awc-json",
+  "body": "[{\"icaoId\":\"LZIB\",\"receiptTime\":\"2026-11-01T11:01:26.254Z\",\"obsTime\":1793530800,\"reportTime\":\"2026-11-01T11:00:00.000Z\",\"temp\":11,\"dewp\":3,\"wdir\":360,\"wspd\":6,\"visib\":\"6+\",\"altim\":1026,\"qcField\":16,\"metarType\":\"METAR\",\"rawOb\":\"METAR LZIB 011100Z 36006KT 9999 FEW029 11/03 Q1026 NOSIG\",\"lat\":48.17,\"lon\":17.207,\"elev\":129,\"name\":\"Bratislava/Ivanka Arpt, BL, SK\",\"cover\":\"FEW\",\"clouds\":[{\"cover\":\"FEW\",\"base\":2900}],\"fltCat\":\"VFR\"}]"
+}

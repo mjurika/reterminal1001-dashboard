@@ -1,0 +1,13 @@
+{
+  "station": "LZIB",
+  "stationName": "Letisko Bratislava",
+  "latitude": 48.170,
+  "longitude": 17.213,
+  "timezone": "Europe/Bratislava",
+  "hourlyModels": ["chmi_aladin_central_europe_2km", "ecmwf_ifs"],
+  "dailyModels": ["ecmwf_ifs"],
+  "hours": 8,
+  "days": 3,
+  "metarStaleMinutes": 90,
+  "threshold": 160
+}

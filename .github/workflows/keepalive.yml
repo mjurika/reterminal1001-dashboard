@@ -1,0 +1,21 @@
+name: keepalive
+
+# GitHub disables scheduled workflows after 60 days without repository activity.
+# This re-enables the render workflow (and itself) once a month via the API (no commits needed).
+on:
+  schedule:
+    - cron: '17 4 1 * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/render.yml/enable"
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keepalive.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,33 @@
+{
+  "name": "reterminal-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Weather dashboard background renderer for the Seeed reTerminal E1001 (800x480 B/W e-paper)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "fetch": "tsx src/build-data.ts",
+    "fetch:fixtures": "tsx src/build-data.ts --fixtures",
+    "fixtures:record": "tsx src/record-fixtures.ts",
+    "render": "tsx src/render.ts",
+    "site": "tsx src/build-site.ts",
+    "build": "npm run fetch && npm run render && npm run site",
+    "build:fixtures": "npm run fetch:fixtures && npm run render && npm run site",
+    "gen:firmware": "tsx src/gen-firmware.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "playwright": "^1.64.1",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

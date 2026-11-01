@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <title>reTerminal dashboard – template</title>
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<!--
+  800×480 background for the reTerminal E1001.
+  Query parameters (for development):
+    ?data=URL      data file (default ../data.json)
+    ?holes=demo    fill the device-drawn holes with sample values
+    ?holes=outline show hole outlines
+    ?bw=1          preview the 1-bit threshold
+-->
+<body>
+  <main id="screen">
+    <!-- top band: [clock + indoor holes] | date | METAR -->
+    <section id="date">
+      <div class="weekday" data-bind="weekday"></div>
+      <div class="ddmm" data-bind="date"></div>
+    </section>
+
+    <section id="metar">
+      <div class="metar-head"><span data-bind="station"></span> · <span data-bind="metarTime"></span></div>
+      <div class="metar-main">
+        <div class="metar-temp" data-bind="metarTemp"></div>
+        <div class="metar-rh" data-bind="metarRh"></div>
+      </div>
+      <div class="metar-row">Vietor <b data-bind="metarWind"></b></div>
+      <div class="metar-row gust" data-bind="metarGust"></div>
+    </section>
+
+    <section id="hours"></section>
+    <section id="days"></section>
+
+    <footer id="footer"></footer>
+
+    <!-- device-drawn areas (empty in the rendered background) -->
+    <div id="holes"></div>
+  </main>
+
+  <svg width="0" height="0" style="position:absolute">
+    <filter id="threshold" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+        <feFuncG type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+        <feFuncB type="discrete" tableValues="0 0 0 0 0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+  </svg>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

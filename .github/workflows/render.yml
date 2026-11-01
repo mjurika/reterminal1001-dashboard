@@ -1,0 +1,54 @@
+name: render
+
+# Fetches METAR + forecast, renders the dashboard background and publishes it to GitHub Pages.
+on:
+  schedule:
+    - cron: '5,35 * * * *' # LZIB METAR is issued at :00 and :30 (GitHub may start runs a few minutes late)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['template/**', 'src/**', 'preview/**', 'layout.json', 'config.json', 'package*.json', '.github/workflows/render.yml']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm run fetch
+      - run: npm run render
+      - run: npm run site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

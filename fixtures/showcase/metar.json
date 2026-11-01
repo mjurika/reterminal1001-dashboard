@@ -1,0 +1,5 @@
+{
+  "capturedAt": "2026-11-01T11:22:43.829Z",
+  "source": "awc-json",
+  "body": "[{\"icaoId\":\"LZIB\",\"obsTime\":1793530800,\"temp\":-4,\"dewp\":-7,\"wdir\":240,\"wspd\":19,\"wgst\":31,\"rawOb\":\"METAR LZIB 011100Z 24019G31KT 9999 -SN BKN012 M04/M07 Q1008\"}]"
+}

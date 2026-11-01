@@ -1,0 +1,7 @@
+node_modules/
+out/
+site/
+.pio/
+firmware/include/secrets.h
+.vscode/*
+!.vscode/extensions.json
