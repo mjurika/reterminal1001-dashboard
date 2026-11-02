@@ -13,8 +13,9 @@ interface FontSpec { name: string; weight: number; size: number; first: number; 
 
 // Keep in sync with the hole CSS in preview/index.html (.hole.clock / .indoor / .battery).
 const FONTS: FontSpec[] = [
-  { name: 'FontClock', weight: 700, size: 144, first: 0x2d, last: 0x3a }, // "-./0123456789:"
-  { name: 'FontMedium', weight: 700, size: 56, first: 0x20, last: 0x7e },
+  { name: 'FontClock', weight: 700, size: 168, first: 0x2d, last: 0x3a }, // "-./0123456789:"
+  { name: 'FontMedium', weight: 700, size: 76, first: 0x20, last: 0x39 }, // indoor values: " %,-.0-9"
+  { name: 'FontUnit', weight: 700, size: 38, first: 0x25, last: 0x25 }, // "%" next to indoor humidity
   { name: 'FontSmall', weight: 600, size: 22, first: 0x20, last: 0x7e },
 ];
 

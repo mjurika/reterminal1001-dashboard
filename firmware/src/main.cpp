@@ -40,7 +40,7 @@ GxEPD2_BW<GxEPD2_750_GDEY075T7, GxEPD2_750_GDEY075T7::HEIGHT> display(
 
 static constexpr size_t BG_BYTES = SCREEN_W * SCREEN_H / 8;
 static constexpr const char *BG_FILE = "/bg.bin";
-static constexpr uint32_t STATE_MAGIC = 0xD45B0A02;  // change when State changes
+static constexpr uint32_t STATE_MAGIC = 0xD45B0A03;  // change when State changes
 static constexpr int BATTERY_USB = 101;
 
 // Survives deep sleep (and is a plain global in the other modes).
@@ -54,6 +54,7 @@ struct State {
   time_t lastNtp;
   uint16_t partials;    // partial refreshes since the last full refresh
   int16_t battery;      // percent shown, BATTERY_USB, or -1 = unknown
+  int16_t indoorKey;    // indoor values shown (t*10 and rh combined), -32768 = unknown
   bool staleShown;
   bool nightShown;
 };
@@ -272,30 +273,50 @@ static void drawClock(const struct tm *lt, bool blank) {
   display.print(s);
 }
 
+static void formatIndoor(const Indoor &in, char *t, char *rh) {
+  if (!in.ok) {
+    strcpy(t, "--,-");
+    strcpy(rh, "--");
+    return;
+  }
+  snprintf(t, 12, "%.1f", in.t);
+  for (char *p = t; *p; p++) if (*p == '.') *p = ',';
+  snprintf(rh, 12, "%d", (int)lroundf(in.rh));
+}
+
+/** Identifies what drawIndoor() would show, to skip refreshes when nothing visible changed. */
+static int16_t indoorKey(const Indoor &in) {
+  if (!in.ok) return -32767;
+  return (int16_t)(lroundf(in.t * 10) * 128 + lroundf(in.rh));
+}
+
+/** Two rows in the indoor hole: temperature with a drawn degree ring, humidity with a smaller "%". */
 static void drawIndoor(const Indoor &in) {
   char t[12], rh[12];
-  if (in.ok) {
-    snprintf(t, sizeof(t), "%.1f", in.t);
-    for (char *p = t; *p; p++) if (*p == '.') *p = ',';
-    snprintf(rh, sizeof(rh), "%d %%", (int)lroundf(in.rh));
-  } else {
-    strcpy(t, "--,-");
-    strcpy(rh, "-- %");
-  }
-  const int16_t gap = 40, degW = 20;
-  const int16_t wt = textWidth(&FontMedium, t), wr = textWidth(&FontMedium, rh);
+  formatIndoor(in, t, rh);
   const Rect &r = HOLE_INDOOR;
-  int16_t x = r.x + (r.w - (wt + degW + gap + wr)) / 2;
-  int16_t digitH;
-  const int16_t baseline = digitBaseline(r, &FontMedium, &digitH);
+  const Rect top = {r.x, r.y, r.w, (int16_t)(r.h / 2)};
+  const Rect bottom = {r.x, (int16_t)(r.y + r.h / 2), r.w, (int16_t)(r.h - r.h / 2)};
   display.setTextColor(GxEPD_BLACK);
+  int16_t digitH;
+
+  const int16_t degW = 26, wt = textWidth(&FontMedium, t);
+  int16_t x = r.x + (r.w - (wt + degW)) / 2;
+  int16_t baseline = digitBaseline(top, &FontMedium, &digitH);
   display.setFont(&FontMedium);
   display.setCursor(x, baseline);
   display.print(t);
-  drawDegree(x + wt + 10, baseline - digitH + 7, 7);
-  x += wt + degW + gap;
+  drawDegree(x + wt + 13, baseline - digitH + 9, 9);
+
+  const int16_t wr = textWidth(&FontMedium, rh), wp = textWidth(&FontUnit, "%"), gap = 4;
+  x = r.x + (r.w - (wr + gap + wp)) / 2;
+  baseline = digitBaseline(bottom, &FontMedium);
+  display.setFont(&FontMedium);
   display.setCursor(x, baseline);
   display.print(rh);
+  display.setFont(&FontUnit);
+  display.setCursor(x + wr + gap, baseline);
+  display.print("%");
 }
 
 static void drawBattery(int pct, bool stale) {
@@ -325,13 +346,6 @@ static void drawBattery(int pct, bool stale) {
   }
 }
 
-static Rect clockArea() {
-  const int16_t x0 = min(HOLE_CLOCK.x, HOLE_INDOOR.x), y0 = min(HOLE_CLOCK.y, HOLE_INDOOR.y);
-  const int16_t x1 = max(HOLE_CLOCK.x + HOLE_CLOCK.w, HOLE_INDOOR.x + HOLE_INDOOR.w);
-  const int16_t y1 = max(HOLE_CLOCK.y + HOLE_CLOCK.h, HOLE_INDOOR.y + HOLE_INDOOR.h);
-  return {x0, y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0)};
-}
-
 template <typename F>
 static void partialRefresh(const Rect &r, F draw) {
   display.setPartialWindow(r.x, r.y, r.w, r.h);
@@ -351,15 +365,16 @@ static void fullRefresh(const struct tm *lt, bool blankClock, const Indoor &in) 
     if (bgValid) {
       display.drawBitmap(0, 0, bg, SCREEN_W, SCREEN_H, GxEPD_BLACK);
     } else {
-      display.setFont(&FontMedium);
+      display.setFont(&FontSmall);
       display.setTextColor(GxEPD_BLACK);
-      display.setCursor(420, 260);
+      display.setCursor(320, 300);
       display.print("Cakam na data...");
     }
     drawClock(lt, blankClock);
     drawIndoor(in);
     drawBattery(st.battery, st.staleShown);
   } while (display.nextPage());
+  st.indoorKey = indoorKey(in);
   st.partials = 0;
   Log.println("full refresh");
 }
@@ -402,10 +417,7 @@ static void tick(bool cold) {
 
   if (night && !cold) {
     if (!st.nightShown) {
-      partialRefresh(clockArea(), [&] {
-        drawClock(&lt, true);
-        drawIndoor(readIndoor());
-      });
+      partialRefresh(HOLE_CLOCK, [&] { drawClock(&lt, true); });
       st.nightShown = true;
     }
     return;
@@ -425,10 +437,11 @@ static void tick(bool cold) {
     fullRefresh(&lt, !haveTime || night, in);
     return;
   }
-  partialRefresh(clockArea(), [&] {
-    drawClock(&lt, !haveTime);
-    drawIndoor(in);
-  });
+  partialRefresh(HOLE_CLOCK, [&] { drawClock(&lt, !haveTime); });
+  if (indoorKey(in) != st.indoorKey) {  // only when the shown value changes (saves a refresh most minutes)
+    st.indoorKey = indoorKey(in);
+    partialRefresh(HOLE_INDOOR, [&] { drawIndoor(in); });
+  }
   if (battery != st.battery || stale != st.staleShown) {
     st.battery = battery;
     st.staleShown = stale;
@@ -500,6 +513,7 @@ void setup() {
     memset(&st, 0, sizeof(st));
     st.magic = STATE_MAGIC;
     st.battery = -1;
+    st.indoorKey = -32768;
   }
   setupHardware(cold);
   Log.printf("\nboot (%s), power mode %d\n", cold ? "cold" : "timer wake", POWER_MODE);

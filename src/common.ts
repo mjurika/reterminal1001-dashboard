@@ -70,5 +70,5 @@ export const WEEKDAYS_SK_SHORT = ['Ne', 'Po', 'Ut', 'St', 'Št', 'Pi', 'So'];
 /** Weekday index (0 = Sunday) of a "YYYY-MM-DD" calendar date. */
 export const weekdayOf = (ymd: string) => new Date(`${ymd}T12:00:00Z`).getUTCDay();
 
-/** "YYYY-MM-DD" → "DD/MM" */
-export const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+/** "YYYY-MM-DD" → "DD.MM" */
+export const ddmm = (ymd: string) => `${ymd.slice(8, 10)}.${ymd.slice(5, 7)}`;

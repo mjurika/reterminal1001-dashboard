@@ -16,26 +16,29 @@
 -->
 <body>
   <main id="screen">
-    <!-- top band: [clock + indoor holes] | date | METAR -->
-    <section id="date">
-      <div class="weekday" data-bind="weekday"></div>
-      <div class="ddmm" data-bind="date"></div>
-    </section>
-
+    <!-- top band: METAR | date + clock (device) | indoor + battery (device) -->
     <section id="metar">
       <div class="metar-head"><span data-bind="station"></span> · <span data-bind="metarTime"></span></div>
       <div class="metar-main">
         <div class="metar-temp" data-bind="metarTemp"></div>
         <div class="metar-rh" data-bind="metarRh"></div>
       </div>
-      <div class="metar-row">Vietor <b data-bind="metarWind"></b></div>
-      <div class="metar-row gust" data-bind="metarGust"></div>
+      <div class="metar-wind-name fit" data-bind="windName"></div>
+      <div class="metar-wind" data-bind="wind"></div>
+    </section>
+
+    <section id="center">
+      <div class="date" data-bind="date"></div>
+      <!-- clock hole below -->
+    </section>
+
+    <section id="indoor">
+      <svg class="house" width="30" height="28" viewBox="0 0 30 28"><path d="M3 13 L15 3 L27 13 M7 10 V25 H23 V10" fill="none" stroke="#000" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/><rect x="12" y="16" width="6" height="9" fill="#000"/></svg>
+      <!-- indoor + battery holes -->
     </section>
 
     <section id="hours"></section>
     <section id="days"></section>
-
-    <footer id="footer"></footer>
 
     <!-- device-drawn areas (empty in the rendered background) -->
     <div id="holes"></div>

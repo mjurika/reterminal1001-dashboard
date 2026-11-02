@@ -18,9 +18,9 @@
             font-family: 'Barlow Condensed', sans-serif; font-weight: 700; }
     .hole { overflow: hidden; }
     .hole > span { line-height: 1; text-box: trim-both cap alphabetic; } /* center on the digit height (cap height → baseline), like the firmware does */
-    .hole.clock { justify-content: center; font-size: 144px; }
-    .hole.indoor { justify-content: center; gap: 40px; font-size: 56px; font-weight: 700; }
-    .hole.indoor small { font-size: 22px; font-weight: 600; }
+    .hole.clock { justify-content: center; font-size: 168px; }
+    .hole.indoor { flex-direction: column; justify-content: space-around; font-size: 76px; }
+    .hole.indoor small { font-size: 38px; margin-left: 4px; }
     .hole.battery { justify-content: flex-end; gap: 6px; font-size: 22px; padding-right: 4px; font-weight: 600; }
     .batt { width: 30px; height: 15px; border: 2px solid #000; position: relative; }
     .batt::after { content: ''; position: absolute; right: -6px; top: 3px; width: 3px; height: 5px; background: #000; }
@@ -90,7 +90,7 @@
       }
       if (name === 'indoor') {
         const t = Number($('tIn').value).toFixed(1).replace('.', ',');
-        return `<span>${t}°</span><span>${$('rhIn').value} %</span>`;
+        return `<span>${t}°</span><span>${$('rhIn').value}<small>%</small></span>`;
       }
       if (name === 'battery') {
         const p = Number($('bat').value);

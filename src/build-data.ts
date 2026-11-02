@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import {
   FIXTURES, OUT, WEEKDAYS_SK, WEEKDAYS_SK_SHORT, ddmm, loadConfig, localParts, readJson, weekdayOf,
 } from './common.ts';
-import { fetchMetarRaw, parseMetarResponse, windDirSk, type Metar } from './fetch/metar.ts';
+import { beaufort, fetchMetarRaw, parseMetarResponse, windDirSk, type Metar } from './fetch/metar.ts';
 import { fetchForecastRaw, parseForecast } from './fetch/forecast.ts';
 
 const MODEL_NAMES: Record<string, string> = {
@@ -85,6 +85,8 @@ export function buildData(inputs: RawInputs) {
       ageMin,
       stale: ageMin > cfg.metarStaleMinutes,
       windDir: windDirSk(m.windDirDeg),
+      beaufort: beaufort(m.windKmh).degree,
+      windName: beaufort(m.windKmh).name,
     };
   }
 

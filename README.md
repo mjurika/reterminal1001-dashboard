@@ -89,7 +89,7 @@ The template reads `out/data.json`. Run `npm run fetch` (live) or `npm run fetch
 | Next 8 h | Open-Meteo `chmi_aladin_central_europe_2km` (temperature, 1h precipitation, weather code). Missing values, incl. precipitation probability, fall back to `ecmwf_ifs`. |
 | Next 3 days (from tomorrow) | Open-Meteo `ecmwf_ifs`: min/max, weather code, max precipitation probability, precipitation sum |
 
-The models and coordinates are set in `config.json`. Open-Meteo is free for non-commercial use, and attribution is in the footer.
+The models and coordinates are set in `config.json`. Open-Meteo is free for non-commercial use (CC BY 4.0). The display has no footer, so attribution is in the Credits section below.
 
 ---
 
@@ -182,8 +182,8 @@ npm run gen:firmware
 ```
 
 This rasterizes **Barlow Condensed** (the template font) in Chromium into Adafruit-GFX fonts:
-- clock 144 px
-- medium 40 px
+- clock 168 px
+- indoor values 76 px, with a 38 px "%"
 - small 22 px
 
 So device-drawn text matches the background. Re-run it after changing `layout.json` or the font sizes in `src/gen-firmware.ts`, then re-flash. The device fonts are ASCII only: the degree sign is drawn as a circle, and device text needs no diacritics.

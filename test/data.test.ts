@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { relativeHumidity, ktToKmh, windDirSk, parseRawMetar } from '../src/fetch/metar.ts';
+import { beaufort, relativeHumidity, ktToKmh, windDirSk, parseRawMetar } from '../src/fetch/metar.ts';
 import { parseForecast } from '../src/fetch/forecast.ts';
 import { buildData, currentMetarSlot, readFixtureInputs } from '../src/build-data.ts';
 import { loadConfig, loadLayout, localParts } from '../src/common.ts';
@@ -20,6 +20,15 @@ test('wind conversion and Slovak compass', () => {
   assert.equal(windDirSk(225), 'JZ');
   assert.equal(windDirSk(95), 'V');
   assert.equal(windDirSk(null), 'premenlivý');
+});
+
+test('Beaufort scale names', () => {
+  assert.deepEqual(beaufort(0), { degree: 0, name: 'bezvetrie' });
+  assert.equal(beaufort(5).name, 'vánok');
+  assert.equal(beaufort(6).name, 'slabý vietor');
+  assert.equal(beaufort(20).name, 'dosť čerstvý vietor');
+  assert.equal(beaufort(35).name, 'čerstvý vietor');
+  assert.equal(beaufort(118).name, 'orkán');
 });
 
 test('raw METAR parser', () => {
@@ -51,10 +60,11 @@ test('forecast picks next 8 hours and 3 days from tomorrow', () => {
 
 test('showcase fixture builds complete data', () => {
   const data = buildData(readFixtureInputs('showcase'));
-  assert.equal(data.local.date, '01/11');
+  assert.equal(data.local.date, '01.11');
   assert.equal(data.local.weekday, 'Nedeľa');
   assert.equal(data.days[0].weekday, 'Po');
   assert.equal(data.metar?.windDir, 'JZ');
+  assert.equal(data.metar?.windName, 'čerstvý vietor');
   assert.equal(data.metar?.gustKmh, 57);
 });
 

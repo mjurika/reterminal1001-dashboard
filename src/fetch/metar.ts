@@ -20,6 +20,18 @@ export function relativeHumidity(tempC: number, dewC: number): number {
 
 export const ktToKmh = (kt: number) => Math.round(kt * 1.852);
 
+/** Beaufort scale: lower bound in km/h of degrees 1–12 and Slovak names (sk.wikipedia.org/wiki/Beaufortova_stupnica_sily_vetra). */
+const BEAUFORT_KMH = [1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118];
+const BEAUFORT_SK = [
+  'bezvetrie', 'vánok', 'slabý vietor', 'mierny vietor', 'dosť čerstvý vietor', 'čerstvý vietor', 'silný vietor',
+  'prudký vietor', 'búrlivý vietor', 'víchrica', 'silná víchrica', 'mohutná víchrica', 'orkán',
+];
+
+export function beaufort(kmh: number): { degree: number; name: string } {
+  const degree = BEAUFORT_KMH.filter((b) => kmh >= b).length;
+  return { degree, name: BEAUFORT_SK[degree] };
+}
+
 const DIRS_SK = ['S', 'SV', 'V', 'JV', 'J', 'JZ', 'Z', 'SZ'];
 
 /** Wind direction in degrees → Slovak 8-point compass (S = sever, J = juh, V = východ, Z = západ). */

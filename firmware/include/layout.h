@@ -6,6 +6,6 @@ struct Rect { int16_t x, y, w, h; };
 
 constexpr int16_t SCREEN_W = 800;
 constexpr int16_t SCREEN_H = 480;
-constexpr Rect HOLE_CLOCK = { 16, 6, 352, 108 };
-constexpr Rect HOLE_INDOOR = { 16, 114, 352, 56 };
-constexpr Rect HOLE_BATTERY = { 704, 8, 88, 32 };
+constexpr Rect HOLE_CLOCK = { 216, 64, 368, 132 };
+constexpr Rect HOLE_INDOOR = { 600, 40, 192, 156 };
+constexpr Rect HOLE_BATTERY = { 704, 6, 88, 30 };

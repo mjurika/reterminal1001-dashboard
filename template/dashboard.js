@@ -13,8 +13,7 @@ function bind(name, html) {
 }
 
 function renderTop(data) {
-  bind('weekday', data.local.weekday);
-  bind('date', data.local.date);
+  bind('date', `<span>${data.local.weekday}</span>${data.local.date}`);
   bind('station', data.station.id);
 
   const m = data.metar;
@@ -27,8 +26,8 @@ function renderTop(data) {
   bind('metarTime', m.obsTimeLocal);
   bind('metarTemp', deg(m.tempC));
   bind('metarRh', `${m.rh}<small>%</small>`);
-  bind('metarWind', m.windKmh === 0 ? 'bezvetrie' : `${m.windDir} ${m.windKmh} km/h`);
-  bind('metarGust', m.gustKmh ? `nárazy ${m.gustKmh} km/h` : '');
+  bind('windName', m.windName);
+  bind('wind', m.windKmh === 0 ? '' : `${m.windDirDeg === null ? 'prem.' : m.windDir} ${m.windKmh} km/h`);
 }
 
 function renderHours(hours) {
@@ -61,18 +60,13 @@ function renderDays(days) {
     .join('');
 }
 
-function renderFooter(data) {
-  const models = [...new Set([...data.models.hourly, ...data.models.daily])].join(' + ');
-  $('#footer').innerHTML = `<span>Aktualizované ${data.local.time} · ${models}</span><span>Open-Meteo · NOAA AWC</span>`;
-}
-
 function renderHoles(layout, mode) {
   const demo = {
     clock: () => {
       const d = new Date();
       return `<span>${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</span>`;
     },
-    indoor: () => '<span>22,4°</span><span>48 %</span>',
+    indoor: () => '<span>22,4°</span><span>48<small>%</small></span>',
     battery: () => '<span>78 %</span>',
   };
   $('#holes').innerHTML = Object.entries(layout.holes)
@@ -84,11 +78,10 @@ function renderHoles(layout, mode) {
     .join('');
 }
 
-/** Shrinks temperature + humidity together until they fit the METAR column (e.g. "−12°" with "100 %"). */
-function fitMetar() {
-  const row = $('#metar .metar-main');
-  let size = parseFloat(getComputedStyle(row).fontSize);
-  while (row.scrollWidth > row.clientWidth && size > 48) row.style.fontSize = `${(size -= 2)}px`;
+/** Shrinks an element's font until its content fits its width (e.g. "−12°" with "100%", "dosť čerstvý vietor"). */
+function fit(el, min) {
+  let size = parseFloat(getComputedStyle(el).fontSize);
+  while (el.scrollWidth > el.clientWidth && size > min) el.style.fontSize = `${(size -= 1)}px`;
 }
 
 async function main() {
@@ -104,11 +97,12 @@ async function main() {
   renderTop(data);
   renderHours(data.hours);
   renderDays(data.days);
-  renderFooter(data);
   renderHoles(layout, params.get('holes'));
 
   await document.fonts.ready;
-  fitMetar();
+  fit($('#metar .metar-main'), 44);
+  fit($('#metar .metar-wind-name'), 20);
+  fit($('#metar .metar-wind'), 20);
   document.body.dataset.ready = '1'; // signal for src/render.ts
 }
 
