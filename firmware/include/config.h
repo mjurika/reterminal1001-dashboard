@@ -24,7 +24,7 @@
 #define NIGHT_END_HOUR 6
 
 // ---------- calibration ----------
-#define INDOOR_TEMP_OFFSET -0.5f    // °C, added to the SHT4x reading (case self-heating)
+#define INDOOR_TEMP_OFFSET 0.0f    // °C, added to the SHT4x reading (case self-heating)
 #define USB_VOLTAGE_THRESHOLD 4.15f // battery voltage above this is shown as "USB"
 
 // ---------- power modes (selected by platformio.ini env) ----------
