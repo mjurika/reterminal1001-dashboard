@@ -11,17 +11,28 @@
 
 // ---------- schedule ----------
 // The background is re-rendered after each METAR (:00/:30). Until meta.json reports the METAR of the
-// current half hour, the device polls it (a few hundred bytes) every METAR_POLL_EVERY minutes
-// between HH:04 and HH:24 (and HH:34–HH:54); then it stops until the next half hour.
-#define METAR_POLL_START 4
-#define METAR_POLL_END 24
-#define METAR_POLL_EVERY 2
+// current half hour, the device checks it at these minutes after :00 / :30 (backing off), then stops
+// until the next half hour. Each check is one Wi-Fi session, the main battery cost.
+#define METAR_POLL_MINUTES {4, 7, 11, 16, 24}
 #define FETCH_MAX_INTERVAL_MINUTES 30  // check at least this often (forecast-only updates, missing METAR)
 #define FETCH_RETRY_MINUTES 5          // retry interval after a failed download
 #define FULL_REFRESH_EVERY 60       // force a full refresh after this many partial refreshes (ghosting)
 #define BATTERY_UPDATE_MINUTES 10   // battery indicator refresh interval
 #define NIGHT_START_HOUR 23         // battery modes: no clock updates 23:00–06:00
 #define NIGHT_END_HOUR 6
+
+// Indoor values are redrawn only when they change noticeably (sensor jitter is ±0.1 °C),
+// or when any change has been waiting for INDOOR_REFRESH_MINUTES.
+#define INDOOR_MIN_DELTA_T 0.2f     // °C
+#define INDOOR_MIN_DELTA_RH 2       // %
+#define INDOOR_REFRESH_MINUTES 10
+
+// ---------- Wi-Fi ----------
+// Optional static IP: skips DHCP (~0.5–1 s per connect). Leave commented out to use DHCP.
+// #define WIFI_STATIC_IP  192, 168, 1, 50
+// #define WIFI_GATEWAY    192, 168, 1, 1
+// #define WIFI_SUBNET     255, 255, 255, 0
+// #define WIFI_DNS        192, 168, 1, 1
 
 // ---------- calibration ----------
 #define INDOOR_TEMP_OFFSET 0.0f    // °C, added to the SHT4x reading (case self-heating)

@@ -40,7 +40,7 @@ GxEPD2_BW<GxEPD2_750_GDEY075T7, GxEPD2_750_GDEY075T7::HEIGHT> display(
 
 static constexpr size_t BG_BYTES = SCREEN_W * SCREEN_H / 8;
 static constexpr const char *BG_FILE = "/bg.bin";
-static constexpr uint32_t STATE_MAGIC = 0xD45B0A03;  // change when State changes
+static constexpr uint32_t STATE_MAGIC = 0xD45B0A04;  // change when State changes
 static constexpr int BATTERY_USB = 101;
 
 // Survives deep sleep (and is a plain global in the other modes).
@@ -54,9 +54,15 @@ struct State {
   time_t lastNtp;
   uint16_t partials;    // partial refreshes since the last full refresh
   int16_t battery;      // percent shown, BATTERY_USB, or -1 = unknown
-  int16_t indoorKey;    // indoor values shown (t*10 and rh combined), -32768 = unknown
+  bool indoorValid;     // indoor values below are on screen
+  float indoorT;        // indoor values shown
+  int16_t indoorRh;
+  time_t indoorShownAt;
   bool staleShown;
   bool nightShown;
+  bool bgSaved;         // LittleFS holds the background matching `hash`
+  uint8_t bssid[6];     // last access point, for a fast reconnect without scanning
+  int32_t wifiChannel;  // 0 = unknown
 };
 RTC_DATA_ATTR State st;
 
@@ -103,18 +109,43 @@ static bool ntpSync() {
 
 // ---------------------------------------------------------------- network
 
-static bool wifiOn() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+static bool wifiWait(uint32_t timeoutMs) {
   const uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - t0 > 15000) {
-      Log.println("Wi-Fi connect timeout");
-      return false;
-    }
-    delay(100);
+    if (millis() - t0 > timeoutMs) return false;
+    delay(20);
   }
-  Log.printf("Wi-Fi ok, RSSI %d dBm\n", WiFi.RSSI());
+  return true;
+}
+
+/** Connects using the remembered channel + BSSID (no scan), falling back to a normal connect. */
+static bool wifiOn() {
+  WiFi.persistent(false);  // don't write credentials to flash on every connect
+  WiFi.mode(WIFI_STA);
+#ifdef WIFI_STATIC_IP
+  WiFi.config(IPAddress(WIFI_STATIC_IP), IPAddress(WIFI_GATEWAY), IPAddress(WIFI_SUBNET), IPAddress(WIFI_DNS));
+#endif
+  bool ok = false;
+  if (st.wifiChannel > 0) {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD, st.wifiChannel, st.bssid, true);
+    ok = wifiWait(4000);
+    if (!ok) {  // access point moved to another channel / replaced
+      Log.println("Wi-Fi fast connect failed, scanning");
+      WiFi.disconnect();
+      st.wifiChannel = 0;
+    }
+  }
+  if (!ok) {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    ok = wifiWait(15000);
+  }
+  if (!ok) {
+    Log.println("Wi-Fi connect timeout");
+    return false;
+  }
+  memcpy(st.bssid, WiFi.BSSID(), sizeof(st.bssid));
+  st.wifiChannel = WiFi.channel();
+  Log.printf("Wi-Fi ok, ch %d, RSSI %d dBm\n", (int)st.wifiChannel, WiFi.RSSI());
   return true;
 }
 
@@ -123,11 +154,8 @@ static void wifiOff() {
   WiFi.mode(WIFI_OFF);
 }
 
-static bool httpGetString(const String &url, String &out) {
-  WiFiClientSecure client;
-  client.setInsecure();  // public, non-sensitive data; avoids maintaining a CA bundle
-  HTTPClient http;
-  http.setTimeout(15000);
+// Both requests of one check go through the same keep-alive TLS connection (one handshake).
+static bool httpGetString(HTTPClient &http, WiFiClientSecure &client, const String &url, String &out) {
   if (!http.begin(client, url)) return false;
   const int code = http.GET();
   if (code == 200) out = http.getString();
@@ -136,11 +164,7 @@ static bool httpGetString(const String &url, String &out) {
   return code == 200;
 }
 
-static bool httpGetExact(const String &url, uint8_t *buf, size_t len) {
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  http.setTimeout(15000);
+static bool httpGetExact(HTTPClient &http, WiFiClientSecure &client, const String &url, uint8_t *buf, size_t len) {
   if (!http.begin(client, url)) return false;
   const int code = http.GET();
   size_t got = 0;
@@ -171,51 +195,70 @@ static String jsonString(const String &json, const char *key) {
   return b < 0 ? "" : json.substring(a + 1, b);
 }
 
+// The background lives in LittleFS and is read into PSRAM only when a full refresh needs it,
+// not on every (deep-sleep) wake-up.
+static bool fsMounted = false;
+
+static bool ensureBuffers() {
+  if (!fsMounted) fsMounted = LittleFS.begin(true);
+  if (!bg) bg = (uint8_t *)ps_malloc(BG_BYTES);
+  if (!bg) Log.println("PSRAM allocation failed - enable OPI PSRAM");
+  return fsMounted && bg;
+}
+
+static void loadBackground() {
+  if (bgValid || !ensureBuffers()) return;
+  File f = LittleFS.open(BG_FILE, "r");
+  if (f && f.size() == BG_BYTES) bgValid = f.read(bg, BG_BYTES) == BG_BYTES;
+  if (f) f.close();
+  if (!bgValid) st.bgSaved = false;
+}
+
 static FetchResult fetchBackground() {
   st.lastFetchTry = time(nullptr);
-  if (!wifiOn()) {
-    wifiOff();
-    return FETCH_FAIL;
-  }
-  if (!timeValid() || time(nullptr) - st.lastNtp > 24 * 3600) ntpSync();
-
+  setCpuFrequencyMhz(240);  // TLS handshake is ~3× faster at 240 MHz → less time with the radio on
   FetchResult result = FETCH_FAIL;
-  const String bust = "?t=" + String((long)(time(nullptr) / 60));  // bypass the Pages CDN cache
-  String meta;
-  if (httpGetString(String(DASHBOARD_BASE_URL) + "/meta.json" + bust, meta)) {
-    const String hash = jsonString(meta, "hash");
-    const String metarTime = jsonString(meta, "metarTime");
-    if (bgValid && hash.length() && hash == st.hash) {
-      result = FETCH_UNCHANGED;
-    } else {
-      uint8_t *tmp = (uint8_t *)ps_malloc(BG_BYTES);
-      if (tmp && httpGetExact(String(DASHBOARD_BASE_URL) + "/dashboard.bin" + bust, tmp, BG_BYTES)) {
-        memcpy(bg, tmp, BG_BYTES);
-        bgValid = true;
-        strlcpy(st.hash, hash.c_str(), sizeof(st.hash));
-        strlcpy(st.metarTime, metarTime.c_str(), sizeof(st.metarTime));
-        File f = LittleFS.open(BG_FILE, "w");
-        if (f) {
-          f.write(bg, BG_BYTES);
-          f.close();
+  if (wifiOn()) {
+    if (!timeValid() || time(nullptr) - st.lastNtp > 24 * 3600) ntpSync();
+
+    WiFiClientSecure client;
+    client.setInsecure();  // public, non-sensitive data; avoids maintaining a CA bundle
+    HTTPClient http;
+    http.setReuse(true);
+    http.setTimeout(15000);
+    const String bust = "?t=" + String((long)(time(nullptr) / 60));  // bypass the Pages CDN cache
+    String meta;
+    if (httpGetString(http, client, String(DASHBOARD_BASE_URL) + "/meta.json" + bust, meta)) {
+      const String hash = jsonString(meta, "hash");
+      const String metarTime = jsonString(meta, "metarTime");
+      if (st.bgSaved && hash.length() && hash == st.hash) {
+        result = FETCH_UNCHANGED;
+      } else if (ensureBuffers()) {
+        uint8_t *tmp = (uint8_t *)ps_malloc(BG_BYTES);
+        if (tmp && httpGetExact(http, client, String(DASHBOARD_BASE_URL) + "/dashboard.bin" + bust, tmp, BG_BYTES)) {
+          memcpy(bg, tmp, BG_BYTES);
+          bgValid = true;
+          strlcpy(st.hash, hash.c_str(), sizeof(st.hash));
+          strlcpy(st.metarTime, metarTime.c_str(), sizeof(st.metarTime));
+          File f = LittleFS.open(BG_FILE, "w");
+          if (f) {
+            st.bgSaved = f.write(bg, BG_BYTES) == BG_BYTES;
+            f.close();
+          }
+          result = FETCH_NEW;
         }
-        result = FETCH_NEW;
+        free(tmp);
       }
-      free(tmp);
     }
+    client.stop();
   }
+  wifiOff();
+  setCpuFrequencyMhz(80);
   st.lastFetchFailed = result == FETCH_FAIL;
   if (result != FETCH_FAIL) st.lastFetchOk = time(nullptr);
   Log.printf("fetch: %s (hash %s, METAR %s)\n",
              result == FETCH_NEW ? "new" : result == FETCH_UNCHANGED ? "unchanged" : "FAILED", st.hash, st.metarTime);
-  wifiOff();
   return result;
-}
-
-static void loadBackground() {
-  File f = LittleFS.open(BG_FILE, "r");
-  if (f && f.size() == BG_BYTES) bgValid = f.read(bg, BG_BYTES) == BG_BYTES;
-  if (f) f.close();
 }
 
 // ---------------------------------------------------------------- sensors
@@ -284,10 +327,24 @@ static void formatIndoor(const Indoor &in, char *t, char *rh) {
   snprintf(rh, 12, "%d", (int)lroundf(in.rh));
 }
 
-/** Identifies what drawIndoor() would show, to skip refreshes when nothing visible changed. */
-static int16_t indoorKey(const Indoor &in) {
-  if (!in.ok) return -32767;
-  return (int16_t)(lroundf(in.t * 10) * 128 + lroundf(in.rh));
+/**
+ * Whether the indoor area needs a redraw: a noticeable change, or any visible change that has waited
+ * INDOOR_REFRESH_MINUTES. Sensor jitter alone (±0.1 °C) doesn't cost a refresh every minute.
+ */
+static bool indoorRedrawDue(const Indoor &in, time_t now) {
+  if (!st.indoorValid || !in.ok) return st.indoorValid != in.ok;
+  const float dt = fabsf(in.t - st.indoorT);
+  const int drh = abs((int)lroundf(in.rh) - st.indoorRh);
+  if (dt >= INDOOR_MIN_DELTA_T - 0.01f || drh >= INDOOR_MIN_DELTA_RH) return true;
+  const bool visible = lroundf(in.t * 10) != lroundf(st.indoorT * 10) || drh > 0;
+  return visible && now - st.indoorShownAt >= INDOOR_REFRESH_MINUTES * 60;
+}
+
+static void rememberIndoor(const Indoor &in, time_t now) {
+  st.indoorValid = in.ok;
+  st.indoorT = in.t;
+  st.indoorRh = (int16_t)lroundf(in.rh);
+  st.indoorShownAt = now;
 }
 
 /** Two rows in the indoor hole: temperature with a drawn degree ring, humidity with a smaller "%". */
@@ -358,6 +415,7 @@ static void partialRefresh(const Rect &r, F draw) {
 }
 
 static void fullRefresh(const struct tm *lt, bool blankClock, const Indoor &in) {
+  if (st.bgSaved) loadBackground();  // no-op if already in PSRAM
   display.setFullWindow();
   display.firstPage();
   do {
@@ -374,7 +432,7 @@ static void fullRefresh(const struct tm *lt, bool blankClock, const Indoor &in) 
     drawIndoor(in);
     drawBattery(st.battery, st.staleShown);
   } while (display.nextPage());
-  st.indoorKey = indoorKey(in);
+  rememberIndoor(in, time(nullptr));
   st.partials = 0;
   Log.println("full refresh");
 }
@@ -391,12 +449,13 @@ static bool metarCurrent(const struct tm &lt) {
 
 /** Whether to check meta.json in this minute. */
 static bool fetchDue(const struct tm &lt, time_t now) {
-  if (!bgValid) return true;
   if (st.lastFetchFailed) return now - st.lastFetchTry >= FETCH_RETRY_MINUTES * 60;
+  if (!st.bgSaved && !bgValid) return true;
+  static const int pollMinutes[] = METAR_POLL_MINUTES;
   const int m30 = lt.tm_min % 30;
-  const bool pollMinute =
-      m30 >= METAR_POLL_START && m30 <= METAR_POLL_END && (m30 - METAR_POLL_START) % METAR_POLL_EVERY == 0;
-  if (pollMinute && !metarCurrent(lt)) return true;  // new METAR expected on Pages any minute
+  bool pollMinute = false;
+  for (int m : pollMinutes) pollMinute |= m == m30;
+  if (pollMinute && !metarCurrent(lt)) return true;  // new METAR expected on Pages soon
   return now - st.lastFetchTry >= FETCH_MAX_INTERVAL_MINUTES * 60;
 }
 
@@ -438,8 +497,8 @@ static void tick(bool cold) {
     return;
   }
   partialRefresh(HOLE_CLOCK, [&] { drawClock(&lt, !haveTime); });
-  if (indoorKey(in) != st.indoorKey) {  // only when the shown value changes (saves a refresh most minutes)
-    st.indoorKey = indoorKey(in);
+  if (indoorRedrawDue(in, now)) {
+    rememberIndoor(in, now);
     partialRefresh(HOLE_INDOOR, [&] { drawIndoor(in); });
   }
   if (battery != st.battery || stale != st.staleShown) {
@@ -467,20 +526,35 @@ static uint64_t sleepMicros() {
   return (uint64_t)(60 - lt.tm_sec) * 1000000ULL - tv.tv_usec + 300000;  // land just after the minute flips
 }
 
-static void setupHardware(bool cold) {
-  Log.begin(115200, SERIAL_8N1, LOG_RX, LOG_TX);
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);  // off
-  pinMode(SD_CS, OUTPUT);
-  digitalWrite(SD_CS, HIGH);    // keep the SD card off the shared SPI bus
+// Output pins and their idle level; held at that level during deep sleep so nothing floats or leaks.
+static const struct { uint8_t pin, level; } IDLE_PINS[] = {
+    {EPD_RST, HIGH}, {EPD_CS, HIGH}, {SD_CS, HIGH}, {LED_PIN, HIGH /* off */}, {BATTERY_EN, LOW},
+};
 
-  // Release pins held high during deep sleep (set the level first to avoid a glitch).
-  digitalWrite(EPD_RST, HIGH);
-  pinMode(EPD_RST, OUTPUT);
-  digitalWrite(EPD_CS, HIGH);
-  pinMode(EPD_CS, OUTPUT);
-  gpio_hold_dis((gpio_num_t)EPD_RST);
-  gpio_hold_dis((gpio_num_t)EPD_CS);
+#if POWER_MODE != POWER_USB
+/** GxEPD2 calls this while the panel is busy refreshing: light-sleep until BUSY goes high instead of spinning. */
+static void busySleep(const void *) {
+  Log.flush();
+  gpio_wakeup_enable((gpio_num_t)EPD_BUSY, GPIO_INTR_HIGH_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+  esp_sleep_enable_timer_wakeup(200000);  // safety net; GxEPD2 re-checks BUSY after every call
+  esp_light_sleep_start();
+  gpio_wakeup_disable((gpio_num_t)EPD_BUSY);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+}
+#endif
+
+static void setupHardware(bool cold) {
+  setCpuFrequencyMhz(80);  // enough for drawing and the display; raised to 240 only for Wi-Fi/TLS
+  Log.begin(115200, SERIAL_8N1, LOG_RX, LOG_TX);
+
+  // Configure the outputs, then release the deep-sleep hold (level first, to avoid a glitch).
+  for (const auto &p : IDLE_PINS) {
+    digitalWrite(p.pin, p.level);
+    pinMode(p.pin, OUTPUT);
+    gpio_hold_dis((gpio_num_t)p.pin);
+  }
 
   setenv("TZ", TZ_INFO, 1);
   tzset();
@@ -489,9 +563,10 @@ static void setupHardware(bool cold) {
   if (cold) rtcInit();
   timeFromRtc();
 
-  LittleFS.begin(true);
-  bg = (uint8_t *)ps_malloc(BG_BYTES);
-  loadBackground();
+  if (cold) {  // show the cached background if the first download fails
+    st.bgSaved = true;
+    loadBackground();
+  }
 
 #if POWER_MODE == POWER_BATTERY_DEEP
   if (cold) {  // the driver has no reset pin in this mode
@@ -504,6 +579,9 @@ static void setupHardware(bool cold) {
   SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
   display.epd2.selectSPI(SPI, SPISettings(4000000, MSBFIRST, SPI_MODE0));
   display.init(0, cold);  // initial=false after deep sleep: panel content and controller RAM are kept
+#if POWER_MODE != POWER_USB
+  display.epd2.setBusyCallback(busySleep);
+#endif
 }
 
 void setup() {
@@ -513,18 +591,18 @@ void setup() {
     memset(&st, 0, sizeof(st));
     st.magic = STATE_MAGIC;
     st.battery = -1;
-    st.indoorKey = -32768;
   }
   setupHardware(cold);
   Log.printf("\nboot (%s), power mode %d\n", cold ? "cold" : "timer wake", POWER_MODE);
-  if (!bg) Log.println("PSRAM allocation failed - enable OPI PSRAM");
 
   tick(cold);
 
 #if POWER_MODE == POWER_BATTERY_DEEP
   display.powerOff();  // not hibernate(): keeps the controller RAM for the next partial refresh
-  gpio_hold_en((gpio_num_t)EPD_RST);
-  gpio_hold_en((gpio_num_t)EPD_CS);
+  for (const auto &p : IDLE_PINS) {
+    digitalWrite(p.pin, p.level);
+    gpio_hold_en((gpio_num_t)p.pin);
+  }
   gpio_deep_sleep_hold_en();
   const uint64_t us = sleepMicros();
   Log.printf("deep sleep %llu s\n", us / 1000000ULL);
